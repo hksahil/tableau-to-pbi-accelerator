@@ -17,6 +17,14 @@ def parse_tableau_xml(file):
         if datasource_name and datasource_caption:
             datasource_map[datasource_name] = datasource_caption
     
+    # Create a mapping of columns to their captions
+    column_map = {}
+    for column in root.findall(".//column"):
+        column_name = column.get('name')
+        column_caption = column.get('caption')
+        if column_name and column_caption:
+            column_map[column_name] = column_caption
+    
     # Create a mapping of worksheets to dashboards
     dashboard_map = {}
 
@@ -47,8 +55,9 @@ def parse_tableau_xml(file):
             data_source_caption = datasource_map.get(datasource_name, datasource_name)
             for column in datasource_dep.findall(".//column"):
                 column_name = column.get('name')
-                if column_name:
-                    columns.append(column_name)
+                # Replace with the column caption if available
+                column_caption = column_map.get(column_name, column_name)
+                columns.append(column_caption)
         
         # Collect slices applied on the worksheet and replace datasource names with captions
         for slice_element in worksheet.findall(".//slices/column"):
