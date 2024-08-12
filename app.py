@@ -1,13 +1,32 @@
 import streamlit as st
 import xml.etree.ElementTree as ET
 import pandas as pd
+import re
+
+def normalize_column_name(name):
+    # Check if the name is None, return an empty string or a placeholder if it is
+    if name is None:
+        return ""
+    # Normalize the column name by removing brackets and trimming spaces
+    return re.sub(r'[\[\]]', '', name).strip()
+
+def replace_internal_names_with_captions(formula, column_map):
+    # Replace the internal names with their corresponding captions in the formula
+    if formula is None:
+        return "No Formula"
+    for internal_name, caption in column_map.items():
+        normalized_internal_name = f"[{internal_name}]"
+        if normalized_internal_name in formula:
+            formula = formula.replace(normalized_internal_name, caption)
+    return formula
 
 def parse_tableau_xml(file):
     tree = ET.parse(file)
     root = tree.getroot()
     
     # Initialize lists to store the data
-    data = []
+    worksheet_data = []
+    datasource_data = []
     
     # Create a mapping of datasource names to their captions
     datasource_map = {}
@@ -17,13 +36,23 @@ def parse_tableau_xml(file):
         if datasource_name and datasource_caption:
             datasource_map[datasource_name] = datasource_caption
     
-    # Create a mapping of columns to their captions
+    # Create a mapping of columns to their captions, datatypes, and formulas
     column_map = {}
+    column_type_map = {}
+    column_formula_map = {}
     for column in root.findall(".//column"):
-        column_name = column.get('name')
+        column_name = normalize_column_name(column.get('name'))
         column_caption = column.get('caption')
-        if column_name and column_caption:
-            column_map[column_name] = column_caption
+        column_datatype = column.get('datatype')
+        column_formula = column.find("./calculation")
+        if column_name:
+            column_map[column_name] = column_caption or column_name
+            column_type_map[column_name] = column_datatype or "Unknown"
+            if column_formula is not None:
+                column_formula_map[column_name] = replace_internal_names_with_captions(
+                    column_formula.get('formula'), column_map)
+            else:
+                column_formula_map[column_name] = "No Formula"
     
     # Create a mapping of worksheets to dashboards
     dashboard_map = {}
@@ -54,7 +83,7 @@ def parse_tableau_xml(file):
             # Use the map to get the caption
             data_source_caption = datasource_map.get(datasource_name, datasource_name)
             for column in datasource_dep.findall(".//column"):
-                column_name = column.get('name')
+                column_name = normalize_column_name(column.get('name'))
                 # Replace with the column caption if available
                 column_caption = column_map.get(column_name, column_name)
                 columns.append(column_caption)
@@ -63,14 +92,15 @@ def parse_tableau_xml(file):
         for slice_element in worksheet.findall(".//slices/column"):
             slice_text = slice_element.text
             if slice_text:
-                # Replace the datasource name with its caption in the slice
+                # Normalize the slice column name and replace the datasource name with its caption in the slice
                 for datasource_name, caption in datasource_map.items():
-                    if slice_text.startswith(f"[{datasource_name}]."):
-                        slice_text = slice_text.replace(f"[{datasource_name}].", f"[{caption}].")
+                    normalized_datasource_name = normalize_column_name(datasource_name)
+                    if slice_text.startswith(f"[{normalized_datasource_name}]."):
+                        slice_text = slice_text.replace(f"[{normalized_datasource_name}].", f"[{caption}].")
                 slices.append(slice_text)
         
-        # Append data to the list
-        data.append({
+        # Append worksheet data to the list
+        worksheet_data.append({
             "Dashboard Name": dashboard_name,
             "Worksheet Name": worksheet_name,
             "Data Source": data_source_caption,
@@ -78,9 +108,27 @@ def parse_tableau_xml(file):
             "Slices": ", ".join(slices) if slices else "No Slices"
         })
     
-    # Convert the list to a DataFrame
-    df = pd.DataFrame(data)
-    return df
+    # Extract data for datasource DataFrame
+    seen_columns = set()
+    for datasource_name, caption in datasource_map.items():
+        for column_name, column_caption in column_map.items():
+            column_datatype = column_type_map.get(column_name, "Unknown")
+            column_formula = column_formula_map.get(column_name, "No Formula")
+            normalized_column_name = normalize_column_name(column_name)
+            if normalized_column_name and normalized_column_name not in seen_columns:
+                datasource_data.append({
+                    "Datasource Caption": caption,
+                    "Column Name": column_caption,
+                    "Column Datatype": column_datatype,
+                    "Formula": column_formula
+                })
+                seen_columns.add(normalized_column_name)
+
+    # Convert the lists to DataFrames
+    worksheet_df = pd.DataFrame(worksheet_data)
+    datasource_df = pd.DataFrame(datasource_data)
+    
+    return worksheet_df, datasource_df
 
 def main():
     st.title("Tableau XML Metadata Extractor")
@@ -89,14 +137,21 @@ def main():
     
     if uploaded_file is not None:
         # Parse the XML and extract the metadata
-        df = parse_tableau_xml(uploaded_file)
+        worksheet_df, datasource_df = parse_tableau_xml(uploaded_file)
         
-        # Display the DataFrame
-        st.dataframe(df)
+        # Display the DataFrames
+        st.subheader("Worksheet Data")
+        st.dataframe(worksheet_df)
+        
+        st.subheader("Datasource Data")
+        st.dataframe(datasource_df)
         
         # Option to download the data as CSV
-        csv = df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download CSV", csv, "tableau_metadata.csv", "text/csv", key='download-csv')
+        worksheet_csv = worksheet_df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Worksheet Data as CSV", worksheet_csv, "tableau_worksheet_metadata.csv", "text/csv", key='download-worksheet-csv')
+        
+        datasource_csv = datasource_df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Datasource Data as CSV", datasource_csv, "tableau_datasource_metadata.csv", "text/csv", key='download-datasource-csv')
         
 if __name__ == "__main__":
     main()
