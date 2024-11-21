@@ -2,7 +2,7 @@ import streamlit as st
 import xml.etree.ElementTree as ET
 import pandas as pd
 import re
-import openai
+#import openai
 
 # Set your OpenAI API key
 openai.api_key = 'your-api-key'
