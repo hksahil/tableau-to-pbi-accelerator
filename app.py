@@ -11,20 +11,20 @@ dashboard_filters_count = 0
 
 
 
-# def convert_to_dax_expression(expression):
-#     try:
-#         response = openai.ChatCompletion.create(
-#             model="gpt-3.5-turbo",
-#             messages=[
-#                 {"role": "system", "content": "You are a helpful assistant."},
-#                 {"role": "user", "content": f"Convert the following tableau formula to a DAX expression and provide only the DAX code without any explanation: {expression}"}
-#             ],
-#             max_tokens=100
-#         )
-#         dax_expression = response.choices[0].message['content'].strip()
-#     except Exception as e:
-#         dax_expression = f"Error: {str(e)}"
-#     return dax_expression
+def convert_to_dax_expression(expression):
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": f"Convert the following tableau formula to a DAX expression and provide only the DAX code without any explanation: {expression}"}
+            ],
+            max_tokens=100
+        )
+        dax_expression = response.choices[0].message['content'].strip()
+    except Exception as e:
+        dax_expression = f"Error: {str(e)}"
+    return dax_expression
 
 def process_dataframe(df):
     df['powerbi formula'] = None
@@ -245,6 +245,7 @@ def main():
         
         st.subheader("Backend Analysis")
         combined_datasource_df['Calculated Column'] = ['No' if i == 'No Formula' else 'Yes' for i in combined_datasource_df['Formula']]
+        combined_datasource_df=process_dataframe(combined_datasource_df)
         st.dataframe(combined_datasource_df)
         
         summary_csv = combined_summary_df.to_csv(index=False).encode('utf-8')
